@@ -19,7 +19,9 @@
     
     <extension point="xbmc.addon.metadata">
         <summary lang="en">Translate subtitle files using AI</summary>
+        <summary lang="zh_cn">使用 AI 翻译字幕文件</summary>
         <description lang="en">This addon lets you translate .srt subtitle files using OpenAI or a mock backend.</description>
+        <description lang="zh_cn">该插件可让您使用 OpenAI 或模拟后台翻译 .srt 字幕文件。</description>
         <platform>all</platform>
         <assets>
             <icon>resources/images/icon.png</icon>
