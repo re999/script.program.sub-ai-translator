@@ -1,1 +1,55 @@
+msgid ""
+msgstr ""
+"Language: zh_CN\n"
 
+msgctxt "#30000"
+msgid "Translate subtitle file"
+msgstr "翻译字幕文件"
+
+msgctxt "#30001"
+msgid "Translation cancelled"
+msgstr "翻译已取消"
+
+msgctxt "#30002"
+msgid "Estimated cost"
+msgstr "预估费用"
+
+msgctxt "#30003"
+msgid "Estimated tokens: {tokens}\nEstimated cost: ~${usd}\n\nContinue?"
+msgstr "预估标记数: {tokens}\n预估费用: ~${usd}\n\n继续？"
+
+msgctxt "#30004"
+msgid "Translation complete"
+msgstr "翻译完毕"
+
+msgctxt "#30005"
+msgid "Saved to: {filename}"
+msgstr "保存到: {filename}"
+
+msgctxt "#30006"
+msgid "Translation error"
+msgstr "翻译错误"
+
+msgctxt "#30007"
+msgid "Translate subtitles..."
+msgstr "翻译字幕..."
+
+msgctxt "#30008"
+msgid "No file path provided"
+msgstr "未提供文件路径"
+
+msgctxt "#30009"
+msgid "No .srt subtitles found"
+msgstr "未找到 .srt 字幕文件"
+
+msgctxt "#30010"
+msgid "Choose subtitle file"
+msgstr "选择字幕文件"
+
+msgctxt "#30011"
+msgid "Extracting embedded subtitles..."
+msgstr "正在提取嵌入式字幕..."
+
+msgctxt "#30012"
+msgid "Failed to extract subtitles"
+msgstr "提取字幕失败"
