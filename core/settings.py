@@ -7,6 +7,8 @@ from backoff import rate_limited_backoff_on_429
 
 addon = Addon("script.program.sub-ai-translator")
 
+_GEMINI_MODELS_CACHE = None
+
 PROVIDERS = {
     "OpenAI": {
         "get_config": lambda: {
@@ -26,7 +28,7 @@ PROVIDERS = {
             "provider": "Gemini",
             "lang": get_effective_lang(),
             "api_key": addon.getSetting("gemini_api_key"),
-            "model": get_enum("gemini_model", ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-2.0-flash"]),
+            "model": resolve_gemini_model(addon, logger=lambda msg: xbmc.log(msg, xbmc.LOGDEBUG)),
             "price_per_1000_tokens": 0.0,
             "use_mock": addon.getSettingBool("use_mock"),
             "parallel": 1
@@ -67,3 +69,86 @@ def get_call_fn():
     provider_options = list(PROVIDERS.keys())
     provider = get_enum("provider", provider_options)
     return PROVIDERS.get(provider, PROVIDERS["Mock (Test)"])["call_fn"]
+
+def list_gemini_models(api_key, logger):
+    global _GEMINI_MODELS_CACHE
+    if _GEMINI_MODELS_CACHE is not None:
+        return _GEMINI_MODELS_CACHE
+
+    try:
+        models = list_models(api_key)
+        _GEMINI_MODELS_CACHE = models
+        logger(f"[GEMINI] Available models: {models}")
+        return models
+    except Exception as e:
+        logger(f"[GEMINI] Failed to list models: {e}")
+        return []
+
+def resolve_gemini_model(addon, logger):
+    api_key = addon.getSetting("gemini_api_key")
+
+    legacy_models = [
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-pro-latest",
+        "gemini-2.0-flash",
+    ]
+
+    try:
+        idx = int(addon.getSetting("gemini_model"))
+    except Exception:
+        idx = 2
+
+    if idx >= 3:
+        try:
+            tier_idx = int(addon.getSetting("gemini_tier"))
+        except Exception:
+            tier_idx = 0
+
+        tier = "pro" if tier_idx == 1 else "flash"
+
+        available = list_gemini_models(api_key, logger)
+        if not available:
+            return "gemini-2.0-flash"
+
+        def score(m):
+            ml = m.lower()
+            return (
+                "preview" in ml or "exp" in ml,
+                0 if ("2.5" in ml or "3" in ml) else 1 if "2.0" in ml else 2,
+            )
+
+        candidates = [m for m in available if tier in m.lower()]
+        candidates.sort(key=score)
+
+        if candidates:
+            return candidates[0]
+
+        fallback = sorted(available, key=score)
+        flash = [m for m in fallback if "flash" in m.lower()]
+        return flash[0] if flash else fallback[0]
+
+    selected = legacy_models[idx] if 0 <= idx < len(legacy_models) else "gemini-2.0-flash"
+
+    if selected.startswith("gemini-1.5-"):
+        return "gemini-2.0-flash"
+
+    available = list_gemini_models(api_key, logger)
+    if available and selected not in available:
+        return "gemini-2.0-flash"
+
+    return selected
+
+
+def list_models(api_key):
+    import urllib.request, json
+    req = urllib.request.Request(
+        "https://generativelanguage.googleapis.com/v1beta/models",
+        headers={"x-goog-api-key": api_key}
+    )
+    with urllib.request.urlopen(req, timeout=10) as res:
+        data = json.loads(res.read().decode())
+        return [
+            m["name"].split("/")[-1]
+            for m in data.get("models", [])
+            if "generateContent" in m.get("supportedGenerationMethods", [])
+        ]

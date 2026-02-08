@@ -11,7 +11,18 @@
 
     <category label="Gemini">
         <setting id="gemini_api_key" type="text" label="Gemini API Key" default="" visible="eq(-4,1)" />
-        <setting id="gemini_model" type="enum" label="Gemini Model" values="gemini-1.5-flash-latest|gemini-1.5-pro-latest|gemini-2.0-flash" default="0" visible="eq(-5,1)" />
+        <setting id="gemini_model"
+                 type="enum"
+                 label="Gemini Model"
+                 values="gemini-1.5-flash-latest|gemini-1.5-pro-latest|gemini-2.0-flash|Auto"
+                 default="2"
+                 visible="eq(-5,1)" />
+        <setting id="gemini_tier"
+                 type="enum"
+                 label="Gemini Tier"
+                 values="Flash (fast)|Pro (quality)"
+                 default="0"
+                 visible="eq(-1,3)" />
     </category>
 
     <category label="Translation">
