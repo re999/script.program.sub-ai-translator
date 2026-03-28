@@ -1,5 +1,5 @@
 from .ebml import read_id, read_size, read_vint
-from typing import List, Tuple, BinaryIO, Optional, Callable
+from typing import List, Tuple, BinaryIO, Optional, Callable, Union
 import mmap
 
 SEGMENT    = 0x18538067
@@ -72,7 +72,7 @@ def extract_subtitles(
     path: str,
     track: int,
     on_progress: Optional[Callable[[float], None]] = None
-) -> List[Tuple[int, str] | Tuple[int, str, int]]:
+) -> List[Union[Tuple[int, str], Tuple[int, str, int]]]:
     subs = []
     try:
         with open(path, "rb") as file:
@@ -87,7 +87,7 @@ def _extract_subtitles_from(
     f: BinaryIO,
     track: int,
     on_progress: Optional[Callable[[float], None]] = None
-) -> List[Tuple[int, str] | Tuple[int, str, int]]:
+) -> List[Union[Tuple[int, str], Tuple[int, str, int]]]:
     subs = []
     _, h = _read_header(f); f.seek(h, 1)
     eid, h = _read_header(f)
@@ -114,7 +114,7 @@ def _extract_subtitles_from(
 
     return subs
 
-def _parse_cluster(f: BinaryIO, size: int, track: int) -> List[Tuple[int, str] | Tuple[int, str, int]]:
+def _parse_cluster(f: BinaryIO, size: int, track: int) -> List[Union[Tuple[int, str], Tuple[int, str, int]]]:
     end=f.tell()+size
     base=_read_cluster_time(f,end)
     out=[]
@@ -147,7 +147,7 @@ def _handle_block(f: BinaryIO, sz: int, base: int, track: int) -> List[Tuple[int
     f.seek(plen,1)
     return []
 
-def _handle_group(f: BinaryIO, sz: int, base: int, track: int) -> List[Tuple[int,str] | Tuple[int,str,int]]:
+def _handle_group(f: BinaryIO, sz: int, base: int, track: int) -> List[Union[Tuple[int, str], Tuple[int, str, int]]]:
     end=f.tell()+sz
     txt = None
     t_rel = None

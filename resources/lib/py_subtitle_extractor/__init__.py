@@ -7,4 +7,4 @@ __all__ = [
     "extract_subtitles_as_srt",
 ]
 
-__version__ = "1.0.5"
+__version__ = "1.0.6"

@@ -1,5 +1,4 @@
 import os
-import glob
 import tempfile
 from py_subtitle_extractor import (
     extract_subtitle_tracks,
@@ -7,9 +6,18 @@ from py_subtitle_extractor import (
 )
 
 def list_external_subtitles(folder_path):
+    try:
+        names = os.listdir(folder_path)
+    except OSError:
+        return []
+    paths = sorted(
+        os.path.join(folder_path, n)
+        for n in names
+        if n.lower().endswith(".srt")
+    )
     return [
         {"label": os.path.basename(p), "type": "external", "path": p}
-        for p in sorted(glob.glob(os.path.join(folder_path, "*.srt")))
+        for p in paths
     ]
 
 def list_embedded_subtitles(video_path):
