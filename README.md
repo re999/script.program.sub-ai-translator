@@ -11,7 +11,8 @@ It’s especially useful for users who want to enjoy movies and shows with subti
 ## 🌟 Features
 
 - 🔤 Translate `.srt` subtitle files (other formats planned)
-- 🤖 Uses **OpenAI ChatGPT** (`gpt-3.5`, `gpt-4`) and **Gemini 1.5/2.0 Flash/Pro** models. The Gemini models can be used **free of charge** but are slower!
+- 🤖 Uses **OpenAI** (`gpt-5.6-luna`, `gpt-5.6-terra`) via the Responses API and **Gemini** (`gemini-3.8-flash`) with strict JSON-schema structured output. Gemini can be used **free of charge** but is slower!
+- ✅ Every subtitle block is validated; missing or malformed items are retried individually and an incomplete translation is never saved
 - 🤪 Mock backend for **offline testing** (no token usage)
 - 📂 Context menu support on video file:
   - Translate subtitles from `.srt` files or folders containing video files or **extracted from MKV** (currently experimental)
@@ -22,7 +23,7 @@ It’s especially useful for users who want to enjoy movies and shows with subti
   - Token price estimation
   - Parallel request control (advanced setting)
 - 📊 Live token cost estimation before translation
-- 📊 Progress bar with cancel option, rate limiting, and retry/backoff for Gemini
+- 📊 Progress bar with cancel option and retries for rate limits and transient errors (honoring `Retry-After`)
 
 ---
 
@@ -77,11 +78,27 @@ Accessible via **Add-on Settings**:
 |--------|-------------|
 | **Target Language** | Choose a predefined language or enter a custom one |
 | **Provider** | Select between OpenAI, Gemini or mock backend |
-| **Model** | Choose supported model for selected provider |
+| **Model** | Choose supported model for selected provider. Legacy selections (`gpt-3.5-turbo`, `gpt-4`, `gpt-4-turbo`, Gemini 1.5/2.0, Auto) keep working and are mapped to current models |
 | **API Key** | Paste your API key (OpenAI or Gemini) here |
 | **Price per 1000 tokens** | Used for cost estimation |
 | **Parallel Requests** | Control performance / speed (e.g., 1 for Gemini) |
 | **Mock Backend** | Use fake responses for testing (no real API calls) |
+
+---
+
+## 🧪 Development
+
+Run the automated tests (no API keys or network needed):
+
+```bash
+python3 -m pytest
+```
+
+Optional live smoke test against the real APIs (uses your account and costs tokens):
+
+```bash
+OPENAI_API_KEY=... GEMINI_API_KEY=... python3 tests/live_smoke.py [openai] [gemini]
+```
 
 ---
 

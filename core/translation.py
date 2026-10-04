@@ -1,91 +1,113 @@
-from concurrent.futures import ThreadPoolExecutor
-from itertools import islice
-from itertools import chain
+import os
+import threading
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
-from .srt import parse_srt, group_blocks, write_srt
-from .prompt import build_prompt, extract_translations
+from .config import BATCH_SIZE
+from .prompt import build_instructions, build_items
+from .retry import TranslationCancelled, call_with_retries
+from .srt import group_blocks, parse_srt, write_srt
+from .validation import valid_translations
 
-def translate_batch(batch, lang, model, api_key, call_fn):
-    indexed_texts = [(i, "\n".join(b["lines"])) for i, b in batch]
-    prompt = build_prompt(indexed_texts, lang)
-    response = call_fn(prompt, model, api_key)
-    translations = extract_translations(response)  # musi zwracać dict: i -> text
-
-    missing = [i for i, _ in batch if i not in translations]
-    if missing:
-        print(f"[WARN] Missing translations for indices: {missing}")
-        print("=== Prompt ===\n" + prompt)
-        print("=== Response ===\n" + response)
-
-    return [(i, translations[i]) for i, _ in batch if i in translations]
+MAX_CONTENT_ATTEMPTS = 3
+CANCEL_POLL_SECONDS = 0.2
 
 
-from itertools import chain
+class TranslationIncomplete(Exception):
+    def __init__(self, unresolved_ids):
+        self.unresolved_ids = list(unresolved_ids)
+        super().__init__(f"Translation incomplete, unresolved subtitle ids: {format_ids(self.unresolved_ids)}")
 
-def execute_batch_group(group, lang, model, api_key, call_fn):
-    with ThreadPoolExecutor(max_workers=len(group)) as executor:
+
+def format_ids(ids):
+    ranges = []
+    for current in sorted(ids):
+        if ranges and current == ranges[-1][1] + 1:
+            ranges[-1][1] = current
+        else:
+            ranges.append([current, current])
+    return ", ".join(str(start) if start == end else f"{start}-{end}" for start, end in ranges)
+
+
+def ids_of(items):
+    return [item["id"] for item in items]
+
+
+def translate_batch(items, instructions, provider, is_cancelled, log):
+    resolved = {}
+    pending = items
+    for content_attempt in range(1, MAX_CONTENT_ATTEMPTS + 1):
+        context = f"{provider.name}/{provider.model} ids [{format_ids(ids_of(pending))}] content attempt {content_attempt}/{MAX_CONTENT_ATTEMPTS}"
+        payload = call_with_retries(
+            lambda: provider.translate(instructions, pending),
+            is_cancelled,
+            lambda message: log(f"{context}: {message}"),
+        )
+        resolved.update(valid_translations(pending, payload))
+        pending = [item for item in pending if item["id"] not in resolved]
+        if not pending:
+            return resolved
+        log(f"{context}: unresolved ids [{format_ids(ids_of(pending))}]")
+    raise TranslationIncomplete(ids_of(pending))
+
+
+def translate_batches(batches, instructions, provider, parallel, report_progress, check_cancelled, log):
+    cancelled = threading.Event()
+    executor = ThreadPoolExecutor(max_workers=max(1, parallel))
+    try:
         futures = [
-            executor.submit(
-                translate_batch,
-                batch,  # już zawiera (i, block)
-                lang, model, api_key, call_fn
-            )
-            for batch in group
+            executor.submit(translate_batch, batch, instructions, provider, cancelled.is_set, log)
+            for batch in batches
         ]
-        return list(chain.from_iterable(f.result() for f in futures))
+        return collect_results(futures, report_progress, check_cancelled, cancelled)
+    finally:
+        cancelled.set()
+        executor.shutdown(wait=False)
 
 
-def translate_in_batches(batches, lang, model, api_key, call_fn, parallel, report_progress=None, check_cancelled=None):
-    results = []
-    batch_iter = iter(batches)
-    total = len(batches)
-    done = 0
-
-    def next_group():
-        return list(islice(batch_iter, parallel))
-
-    group = next_group()
-    while group:
+def collect_results(futures, report_progress, check_cancelled, cancelled):
+    resolved = {}
+    pending = set(futures)
+    while pending:
         if check_cancelled and check_cancelled():
-            raise Exception("Translation interrupted by client")
-
-        group_results = execute_batch_group(group, lang, model, api_key, call_fn)
-        results.extend(group_results)
-
-        done += len(group)
-        if report_progress:
-            report_progress(done, total)
-
-        group = next_group()
-
-    return results
+            cancelled.set()
+            raise TranslationCancelled()
+        done, pending = wait(pending, timeout=CANCEL_POLL_SECONDS, return_when=FIRST_COMPLETED)
+        for future in done:
+            resolved.update(future.result())
+        if done and report_progress:
+            report_progress(len(futures) - len(pending), len(futures))
+    return resolved
 
 
-def merge_translations(blocks, translated_pairs):
-    translated_map = dict(translated_pairs)
-    return [
-        {**block, "lines": translated_map[i].split("\n")}
-        for i, block in enumerate(blocks)
-        if i in translated_map
-    ]
+def merge_translations(blocks, translations):
+    missing = [index for index in range(len(blocks)) if index not in translations]
+    if missing:
+        raise TranslationIncomplete(missing)
+    return [{**block, "lines": translations[index]} for index, block in enumerate(blocks)]
+
+
+def translated_path(path, lang):
+    base, _ = os.path.splitext(path)
+    return f"{base}.{lang.lower()}.translated.srt"
 
 
 def translate_subtitles(
     path,
-    api_key,
     lang,
-    model,
-    call_fn,
+    provider,
     report_progress=None,
     check_cancelled=None,
-    parallel=3
+    parallel=3,
+    log=print
 ):
     blocks = parse_srt(path)
-    batches = group_blocks(list(enumerate(blocks)), 15)
-    translated_pairs = translate_in_batches(
-        batches, lang, model, api_key, call_fn, parallel,
-        report_progress, check_cancelled
+    batches = group_blocks(build_items(enumerate(blocks)), BATCH_SIZE)
+    log(f"{provider.name}/{provider.model}: translating {len(blocks)} subtitles in {len(batches)} batches")
+    translations = translate_batches(
+        batches, build_instructions(lang), provider, parallel,
+        report_progress, check_cancelled, log
     )
-    merged = merge_translations(blocks, translated_pairs)
-    new_path = path.replace(".srt", f".{lang.lower()}.translated.srt")
-    return write_srt(merged, new_path) or new_path
+    merged = merge_translations(blocks, translations)
+    new_path = translated_path(path, lang)
+    write_srt(merged, new_path)
+    return new_path
