@@ -7,6 +7,7 @@ URL = "https://api.openai.com/v1/responses"
 TIMEOUT_SECONDS = 120
 SCHEMA_NAME = "subtitle_translations"
 QUOTA_CODES = ("insufficient_quota", "billing_hard_limit_reached", "billing_not_active")
+NO_REASONING_MODELS = ("gpt-5.6-luna", "gpt-5.6-terra")
 
 
 def translate(instructions, items, model, api_key):
@@ -22,7 +23,7 @@ def translate(instructions, items, model, api_key):
 
 
 def build_request(instructions, items, model):
-    return {
+    request = {
         "model": model,
         "instructions": instructions,
         "input": serialize_items(items),
@@ -36,6 +37,9 @@ def build_request(instructions, items, model):
         },
         "store": False,
     }
+    if model in NO_REASONING_MODELS:
+        request["reasoning"] = {"effort": "none"}
+    return request
 
 
 def extract_payload(response):

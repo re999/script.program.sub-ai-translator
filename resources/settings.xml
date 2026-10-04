@@ -6,7 +6,7 @@
     <category label="OpenAI">
         <setting id="api_key" type="text" label="OpenAI API Key" default="" visible="eq(-2,0)" />
         <setting id="model" type="enum" label="OpenAI Model" values="gpt-3.5-turbo (legacy, uses gpt-5.6-luna)|gpt-4 (legacy, uses gpt-5.6-terra)|gpt-4-turbo (legacy, uses gpt-5.6-terra)|gpt-5.6-luna|gpt-5.6-terra" default="3" visible="eq(-3,0)" />
-        <setting id="price_per_1000_tokens" type="text" label="OpenAI Price per 1000 tokens (USD)" default="0.001" visible="eq(-4,0)" />
+        <setting id="price_per_1000_tokens" type="text" label="OpenAI price override per 1000 tokens (USD, 0 = built-in model pricing)" default="0" visible="eq(-4,0)" />
     </category>
 
     <category label="Gemini">

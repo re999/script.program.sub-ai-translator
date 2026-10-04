@@ -1,7 +1,7 @@
 from functools import partial
 
-from .config import LANGUAGES, DEFAULT_PARALLEL_REQUESTS, DEFAULT_PRICE_PER_1000_TOKENS
-from .models import resolve_openai_model, resolve_gemini_model
+from .config import LANGUAGES, DEFAULT_PARALLEL_REQUESTS, MAX_PARALLEL_REQUESTS, GEMINI_MAX_PARALLEL_REQUESTS
+from .models import FREE, resolve_openai_model, resolve_gemini_model, model_price, price_override
 from .providers import Provider
 import xbmcaddon
 from xbmcaddon import Addon
@@ -15,10 +15,10 @@ PROVIDERS = {
             "provider": "OpenAI",
             "lang": get_effective_lang(),
             "api_key": addon.getSetting("api_key"),
-            "model": resolve_openai_model(get_index("model")),
-            "price_per_1000_tokens": float(addon.getSetting("price_per_1000_tokens") or DEFAULT_PRICE_PER_1000_TOKENS),
+            "model": openai_model(),
+            "price": price_override(addon.getSetting("price_per_1000_tokens")) or model_price(openai_model()),
             "use_mock": addon.getSettingBool("use_mock"),
-            "parallel": 3 #max(1, int(addon.getSetting("parallel_requests") or DEFAULT_PARALLEL_REQUESTS))
+            "parallel": get_parallel_requests(MAX_PARALLEL_REQUESTS)
         },
         "translate": openai.translate
     },
@@ -27,10 +27,10 @@ PROVIDERS = {
             "provider": "Gemini",
             "lang": get_effective_lang(),
             "api_key": addon.getSetting("gemini_api_key"),
-            "model": resolve_gemini_model(get_index("gemini_model")),
-            "price_per_1000_tokens": 0.0,
+            "model": gemini_model(),
+            "price": model_price(gemini_model()),
             "use_mock": addon.getSettingBool("use_mock"),
-            "parallel": 1
+            "parallel": get_parallel_requests(GEMINI_MAX_PARALLEL_REQUESTS)
         },
         "translate": gemini.translate
     },
@@ -40,9 +40,9 @@ PROVIDERS = {
             "lang": get_effective_lang(),
             "api_key": "",
             "model": "mock-model",
-            "price_per_1000_tokens": 0.0,
+            "price": FREE,
             "use_mock": True,
-            "parallel": max(1, int(addon.getSetting("parallel_requests") or DEFAULT_PARALLEL_REQUESTS))
+            "parallel": get_parallel_requests(MAX_PARALLEL_REQUESTS)
         },
         "translate": mock.translate
     }
@@ -53,6 +53,16 @@ def get_index(setting_id):
         return int(addon.getSetting(setting_id))
     except Exception:
         return None
+
+def openai_model():
+    return resolve_openai_model(get_index("model"))
+
+def gemini_model():
+    return resolve_gemini_model(get_index("gemini_model"))
+
+def get_parallel_requests(cap):
+    requested = get_index("parallel_requests")
+    return max(1, min(DEFAULT_PARALLEL_REQUESTS if requested is None else requested, cap))
 
 def get_enum(setting_id, options):
     idx = get_index(setting_id)

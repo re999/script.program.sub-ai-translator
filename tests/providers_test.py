@@ -62,8 +62,15 @@ def openai_response(text):
     }
 
 
-def gemini_response(text):
-    return {"candidates": [{"content": {"role": "model", "parts": [{"text": text}]}, "finishReason": "STOP"}]}
+def gemini_response(text, status="completed"):
+    return {
+        "id": "interaction-1",
+        "status": status,
+        "steps": [
+            {"type": "thought", "content": [{"type": "text", "text": "planning"}]},
+            {"type": "model_output", "content": [{"type": "text", "text": text}]},
+        ],
+    }
 
 
 def test_openai_uses_responses_api_with_strict_schema(urlopen):
@@ -84,6 +91,12 @@ def test_openai_uses_responses_api_with_strict_schema(urlopen):
     }
     assert "tools" not in call["body"]
     assert call["body"]["store"] is False
+    assert call["body"]["reasoning"] == {"effort": "none"}
+
+
+def test_openai_reasoning_is_disabled_for_both_gpt_5_6_models():
+    for model in ("gpt-5.6-luna", "gpt-5.6-terra"):
+        assert openai.build_request("x", ITEMS, model)["reasoning"] == {"effort": "none"}
 
 
 @pytest.mark.parametrize("response", [
@@ -96,40 +109,60 @@ def test_openai_malformed_output_yields_no_payload(urlopen, response):
     assert openai.translate("x", ITEMS, "gpt-5.6-luna", "key") is None
 
 
-def test_gemini_uses_structured_output_and_header_auth(urlopen):
+def test_gemini_uses_interactions_api_with_structured_output(urlopen):
     urlopen.outcome["response"] = gemini_response(json.dumps(TRANSLATED))
 
     payload = gemini.translate("Translate to Polish", ITEMS, "gemini-3.8-flash", "g-secret")
 
     call = urlopen.calls[0]
     assert payload == TRANSLATED
-    assert call["url"] == "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent"
+    assert call["url"] == "https://generativelanguage.googleapis.com/v1beta/interactions"
     assert "g-secret" not in call["url"]
     assert call["headers"]["x-goog-api-key"] == "g-secret"
     assert call["timeout"] == gemini.TIMEOUT_SECONDS
-    assert call["body"]["systemInstruction"] == {"parts": [{"text": "Translate to Polish"}]}
-    assert json.loads(call["body"]["contents"][0]["parts"][0]["text"]) == {"items": ITEMS}
-    assert call["body"]["generationConfig"] == {
-        "responseMimeType": "application/json", "responseJsonSchema": TRANSLATION_SCHEMA,
+    assert call["body"] == {
+        "model": "gemini-3.8-flash",
+        "system_instruction": "Translate to Polish",
+        "input": json.dumps({"items": ITEMS}, ensure_ascii=False),
+        "response_format": {"type": "text", "mime_type": "application/json", "schema": TRANSLATION_SCHEMA},
     }
+
+
+def test_gemini_joins_text_of_model_output_steps_only(urlopen):
+    text = json.dumps(TRANSLATED)
+    urlopen.outcome["response"] = {"status": "completed", "steps": [
+        {"type": "user_input", "content": [{"type": "text", "text": "ignored"}]},
+        {"type": "thought", "content": [{"type": "text", "text": "ignored"}]},
+        {"type": "model_output", "content": [{"type": "text", "text": text[:10]}, {"type": "image", "data": "x"}]},
+        {"type": "model_output", "content": [{"type": "text", "text": text[10:]}]},
+    ]}
+
+    assert gemini.translate("x", ITEMS, "gemini-3.8-flash", "key") == TRANSLATED
 
 
 @pytest.mark.parametrize("response", [
     gemini_response("not json"),
-    {"promptFeedback": {"blockReason": "SAFETY"}},
-    {"candidates": [{"finishReason": "MAX_TOKENS"}]},
+    gemini_response(json.dumps(TRANSLATED), status="incomplete"),
+    gemini_response(json.dumps(TRANSLATED), status="requires_action"),
+    gemini_response(json.dumps(TRANSLATED), status="in_progress"),
+    {"status": "completed", "steps": []},
+    {"status": "completed", "steps": "nope"},
+    {"status": "completed"},
 ])
-def test_gemini_malformed_output_yields_no_payload(urlopen, response):
+def test_gemini_unusable_interactions_yield_no_payload(urlopen, response):
     urlopen.outcome["response"] = response
     assert gemini.translate("x", ITEMS, "gemini-3.8-flash", "key") is None
 
 
-def test_gemini_ignores_thought_parts(urlopen):
-    urlopen.outcome["response"] = {"candidates": [{"content": {"parts": [
-        {"text": "thinking...", "thought": True},
-        {"text": json.dumps(TRANSLATED)},
-    ]}}]}
-    assert gemini.translate("x", ITEMS, "gemini-3.8-flash", "key") == TRANSLATED
+@pytest.mark.parametrize("status", ["failed", "cancelled"])
+def test_gemini_failed_interactions_raise_retryable_error(urlopen, status):
+    urlopen.outcome["response"] = {"status": status, "error": {"message": "internal error"}}
+
+    with pytest.raises(ProviderError) as raised:
+        gemini.translate("x", ITEMS, "gemini-3.8-flash", "key")
+
+    assert (raised.value.category, raised.value.retryable) == ("transient", True)
+    assert "internal error" in str(raised.value)
 
 
 @pytest.mark.parametrize("status,body,headers,category,retry_after", [

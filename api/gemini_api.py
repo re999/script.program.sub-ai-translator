@@ -1,44 +1,63 @@
 import re
-import urllib.parse
 
 from core.prompt import TRANSLATION_SCHEMA, serialize_items
 from .errors import ProviderError
 from .transport import post_json, decode_json_or_none, error_object, status_category, parse_retry_after
 
 PROVIDER = "Gemini"
-URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 TIMEOUT_SECONDS = 120
+FAILED_STATUSES = ("failed", "cancelled")
 DURATION_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)s$")
 
 
 def translate(instructions, items, model, api_key):
     response = post_json(
-        URL_TEMPLATE.format(model=urllib.parse.quote(model, safe="")),
+        URL,
         {"x-goog-api-key": api_key},
-        build_request(instructions, items),
+        build_request(instructions, items, model),
         TIMEOUT_SECONDS,
         PROVIDER,
         normalize_error,
     )
+    raise_if_failed(response)
     return extract_payload(response)
 
 
-def build_request(instructions, items):
+def build_request(instructions, items, model):
     return {
-        "systemInstruction": {"parts": [{"text": instructions}]},
-        "contents": [{"role": "user", "parts": [{"text": serialize_items(items)}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseJsonSchema": TRANSLATION_SCHEMA,
+        "model": model,
+        "system_instruction": instructions,
+        "input": serialize_items(items),
+        "response_format": {
+            "type": "text",
+            "mime_type": "application/json",
+            "schema": TRANSLATION_SCHEMA,
         },
     }
 
 
+def raise_if_failed(response):
+    status = response.get("status")
+    if status in FAILED_STATUSES:
+        message = error_object(response).get("message") or f"interaction {status}"
+        raise ProviderError(PROVIDER, "transient", message, status=200)
+
+
 def extract_payload(response):
-    candidates = dicts(response.get("candidates"))
-    content = candidates[0].get("content") if candidates else None
-    parts = dicts(content.get("parts")) if isinstance(content, dict) else []
-    return decode_json_or_none("".join(part.get("text", "") for part in parts if not part.get("thought")))
+    if response.get("status") not in (None, "completed"):
+        return None
+    return decode_json_or_none("".join(output_texts(response)))
+
+
+def output_texts(response):
+    return [
+        content.get("text", "")
+        for step in dicts(response.get("steps"))
+        if step.get("type") == "model_output"
+        for content in dicts(step.get("content"))
+        if content.get("type") == "text"
+    ]
 
 
 def dicts(value):

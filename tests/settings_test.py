@@ -3,8 +3,9 @@ import pytest
 from conftest import FakeAddon, settings_definitions
 from api import gemini, mock, openai
 from core import settings
+from core.config import GEMINI_MAX_PARALLEL_REQUESTS, MAX_PARALLEL_REQUESTS
 from core.models import (
-    OPENAI_MODEL_CHOICES, GEMINI_MODEL_CHOICES, resolve_openai_model, resolve_gemini_model,
+    FREE, MODEL_PRICES, Price, OPENAI_MODEL_CHOICES, GEMINI_MODEL_CHOICES, resolve_openai_model, resolve_gemini_model,
 )
 
 PREVIOUS_SETTING_IDS = [
@@ -95,8 +96,8 @@ def test_previous_version_openai_settings_keep_working(stored, saved_model, expe
     assert cfg["api_key"] == "sk-previous"
     assert cfg["lang"] == "German"
     assert cfg["model"] == expected
-    assert cfg["price_per_1000_tokens"] == 0.002
-    assert cfg["parallel"] == 3
+    assert cfg["price"] == Price(2.0, 2.0)
+    assert cfg["parallel"] == 5
     assert (provider.name, provider.model) == ("OpenAI", expected)
     assert provider.translate.func is openai.translate
     assert provider.translate.keywords == {"model": expected, "api_key": "sk-previous"}
@@ -105,7 +106,7 @@ def test_previous_version_openai_settings_keep_working(stored, saved_model, expe
 @pytest.mark.parametrize("saved_model", ["0", "1", "2", "3"])
 @pytest.mark.parametrize("saved_tier", ["0", "1", None])
 def test_previous_version_gemini_settings_keep_working(stored, saved_model, saved_tier):
-    stored.update({"provider": "1", "gemini_api_key": "g-previous", "gemini_model": saved_model, "target_lang": "1"})
+    stored.update({"provider": "1", "gemini_api_key": "g-previous", "gemini_model": saved_model, "target_lang": "1", "parallel_requests": "1"})
     if saved_tier is not None:
         stored["gemini_tier"] = saved_tier
 
@@ -116,6 +117,7 @@ def test_previous_version_gemini_settings_keep_working(stored, saved_model, save
     assert cfg["api_key"] == "g-previous"
     assert cfg["lang"] == "Polish"
     assert cfg["model"] == "gemini-3.8-flash"
+    assert cfg["price"] == MODEL_PRICES["gemini-3.8-flash"]
     assert cfg["parallel"] == 1
     assert provider.translate.func is gemini.translate
     assert provider.translate.keywords == {"model": "gemini-3.8-flash", "api_key": "g-previous"}
@@ -138,9 +140,14 @@ def test_fresh_install_uses_new_defaults(stored):
     assert cfg["provider"] == "OpenAI"
     assert cfg["model"] == "gpt-5.6-luna"
     assert cfg["lang"] == "Polish"
+    assert cfg["price"] == MODEL_PRICES["gpt-5.6-luna"]
+    assert cfg["parallel"] == 3
 
     stored["provider"] = "1"
-    assert settings.get()["model"] == "gemini-3.8-flash"
+    gemini_cfg = settings.get()
+    assert gemini_cfg["model"] == "gemini-3.8-flash"
+    assert gemini_cfg["price"] == MODEL_PRICES["gemini-3.8-flash"]
+    assert gemini_cfg["parallel"] == GEMINI_MAX_PARALLEL_REQUESTS
 
 
 def test_corrupted_model_values_never_yield_empty_model(stored):
@@ -149,3 +156,43 @@ def test_corrupted_model_values_never_yield_empty_model(stored):
 
     stored.update({"provider": "1", "gemini_model": "42"})
     assert settings.get()["model"] == "gemini-3.8-flash"
+
+
+@pytest.mark.parametrize("saved,expected", [("1", 1), ("4", 4), ("10", 10), ("0", 1), ("-3", 1), ("25", MAX_PARALLEL_REQUESTS), ("", 3), ("lots", 3)])
+def test_parallel_requests_setting_controls_openai(stored, saved, expected):
+    stored.update({"provider": "0", "parallel_requests": saved})
+    assert settings.get()["parallel"] == expected
+
+
+@pytest.mark.parametrize("saved,expected", [("1", 1), ("2", 2), ("7", GEMINI_MAX_PARALLEL_REQUESTS), ("0", 1), ("", min(3, GEMINI_MAX_PARALLEL_REQUESTS))])
+def test_parallel_requests_setting_controls_gemini_within_its_cap(stored, saved, expected):
+    stored.update({"provider": "1", "parallel_requests": saved})
+    assert settings.get()["parallel"] == expected
+
+
+def test_gemini_cap_is_explicit_and_lower_than_global_cap():
+    assert 1 < GEMINI_MAX_PARALLEL_REQUESTS < MAX_PARALLEL_REQUESTS
+
+
+@pytest.mark.parametrize("saved_model,expected", [("0", "gpt-5.6-luna"), ("1", "gpt-5.6-terra"), ("3", "gpt-5.6-luna"), ("4", "gpt-5.6-terra")])
+@pytest.mark.parametrize("saved_price", ["0.001", "0", "", "abc", "-1", "nan", None])
+def test_openai_uses_built_in_model_price_unless_overridden(stored, saved_model, expected, saved_price):
+    stored.update({"provider": "0", "model": saved_model})
+    if saved_price is not None:
+        stored["price_per_1000_tokens"] = saved_price
+
+    assert settings.get()["price"] == MODEL_PRICES[expected]
+
+
+def test_custom_openai_price_is_an_explicit_blended_override(stored):
+    stored.update({"provider": "0", "model": "4", "price_per_1000_tokens": "0.005"})
+    assert settings.get()["price"] == Price(5.0, 5.0)
+
+
+def test_mock_is_free(stored):
+    stored.update({"provider": "2", "price_per_1000_tokens": "0.5"})
+    assert settings.get()["price"] == FREE
+
+
+def test_every_resolvable_model_has_a_price():
+    assert {model for _, model in OPENAI_MODEL_CHOICES + GEMINI_MODEL_CHOICES} <= set(MODEL_PRICES)

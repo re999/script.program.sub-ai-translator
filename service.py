@@ -26,7 +26,7 @@ else:
         xbmcgui.Dialog().notification(_(30000), _(30001), xbmcgui.NOTIFICATION_INFO, 3000)
         exit()
 
-est = estimate_cost(srt_path, cfg["lang"], cfg["price_per_1000_tokens"])
+est = estimate_cost(srt_path, cfg["lang"], cfg["price"])
 
 if not xbmcgui.Dialog().yesno(
     _(30002),
