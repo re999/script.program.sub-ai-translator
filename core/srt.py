@@ -1,7 +1,11 @@
 import os
 import re
 
-SRT_REGEX = r"(\d+)\s+([\d:,]+)\s+-->\s+([\d:,]+)\s+([\s\S]+?)(?=\n\n|\Z)"
+# Blank lines can occur inside cue text; only another cue header ends it.
+SRT_REGEX = (
+    r"(?m)^(\d+)[ \t]*\n([\d:,]+)[ \t]+-->[ \t]+([\d:,]+)[ \t]*(?:\n|\Z)"
+    r"([\s\S]*?)(?=^\d+[ \t]*\n[\d:,]+[ \t]+-->[ \t]+[\d:,]+[ \t]*(?:\n|\Z)|\Z)"
+)
 
 def parse_srt(path):
     with open(path, encoding="utf-8-sig") as f:
@@ -11,7 +15,7 @@ def parse_srt(path):
             "index": int(m[0]),
             "start": m[1].strip(),
             "end": m[2].strip(),
-            "lines": m[3].strip().splitlines()
+            "lines": [line for line in m[3].strip().splitlines() if line.strip()]
         }
         for m in re.findall(SRT_REGEX, content)
     ]
