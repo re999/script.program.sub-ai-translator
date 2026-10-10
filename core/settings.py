@@ -1,6 +1,6 @@
 from functools import partial
 
-from .config import LANGUAGES, DEFAULT_PARALLEL_REQUESTS, MAX_PARALLEL_REQUESTS, GEMINI_MAX_PARALLEL_REQUESTS
+from .config import LANGUAGES, DEFAULT_PARALLEL_REQUESTS, MAX_PARALLEL_REQUESTS
 from .models import FREE, resolve_openai_model, resolve_gemini_model, model_price, price_override
 from .providers import Provider
 import xbmcaddon
@@ -30,7 +30,7 @@ PROVIDERS = {
             "model": gemini_model(),
             "price": model_price(gemini_model()),
             "use_mock": addon.getSettingBool("use_mock"),
-            "parallel": get_parallel_requests(GEMINI_MAX_PARALLEL_REQUESTS)
+            "parallel": get_parallel_requests(MAX_PARALLEL_REQUESTS)
         },
         "translate": gemini.translate
     },

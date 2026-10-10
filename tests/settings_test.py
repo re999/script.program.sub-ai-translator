@@ -3,7 +3,7 @@ import pytest
 from conftest import FakeAddon, settings_definitions
 from api import gemini, mock, openai
 from core import settings
-from core.config import GEMINI_MAX_PARALLEL_REQUESTS, MAX_PARALLEL_REQUESTS
+from core.config import MAX_PARALLEL_REQUESTS
 from core.models import (
     FREE, MODEL_PRICES, Price, OPENAI_MODEL_CHOICES, GEMINI_MODEL_CHOICES, resolve_openai_model, resolve_gemini_model,
 )
@@ -14,10 +14,10 @@ PREVIOUS_SETTING_IDS = [
 ]
 PREVIOUS_PROVIDER_VALUES = ["OpenAI", "Gemini", "Mock (Test)"]
 PREVIOUS_OPENAI_VALUES = ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
-PREVIOUS_GEMINI_VALUES = ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-2.0-flash", "Auto"]
+PREVIOUS_GEMINI_VALUES = ["gemini-1.5-flash-latest", "gemini-1.5-pro-latest", "gemini-2.0-flash", "Auto", "gemini-3.8-flash"]
 PREVIOUS_LANGUAGE_VALUES = ["English", "Polish", "German", "Dutch", "Spanish", "Italian", "Other"]
 CURRENT_OPENAI_MODELS = {"gpt-5.6-luna", "gpt-5.6-terra"}
-CURRENT_GEMINI_MODELS = {"gemini-3.8-flash"}
+CURRENT_GEMINI_MODELS = {"gemini-3.8-flash", "gemini-3.5-flash-lite"}
 
 
 @pytest.fixture
@@ -58,7 +58,8 @@ def test_model_enums_only_append_new_entries(setting_id, previous, choices):
 
 def test_fresh_install_defaults_point_to_new_models():
     assert OPENAI_MODEL_CHOICES[enum_default("model")][0] == "gpt-5.6-luna"
-    assert GEMINI_MODEL_CHOICES[enum_default("gemini_model")][0] == "gemini-3.8-flash"
+    assert enum_default("gemini_model") == 5
+    assert GEMINI_MODEL_CHOICES[enum_default("gemini_model")][0] == "gemini-3.5-flash-lite"
 
 
 @pytest.mark.parametrize("index,expected", [(0, "gpt-5.6-luna"), (1, "gpt-5.6-terra"), (2, "gpt-5.6-terra"), (3, "gpt-5.6-luna"), (4, "gpt-5.6-terra")])
@@ -74,7 +75,26 @@ def test_gemini_indices_resolve_to_current_model(index):
 @pytest.mark.parametrize("index", [None, -1, 5, 99])
 def test_unknown_indices_fall_back_to_default_never_empty(index):
     assert resolve_openai_model(index) == "gpt-5.6-luna"
-    assert resolve_gemini_model(index) == "gemini-3.8-flash"
+
+
+@pytest.mark.parametrize("index", [None, -1, 6, 99])
+def test_unknown_gemini_indices_fall_back_to_default_never_empty(index):
+    assert resolve_gemini_model(index) == "gemini-3.5-flash-lite"
+
+
+def test_appended_gemini_index_selects_flash_lite(stored):
+    stored.update({"provider": "1", "gemini_model": "5", "gemini_api_key": "g-secret"})
+
+    cfg = settings.get()
+    provider = settings.get_provider(cfg)
+
+    assert resolve_gemini_model(5) == "gemini-3.5-flash-lite"
+    assert cfg["model"] == "gemini-3.5-flash-lite"
+    assert cfg["price"] == Price(0.30, 2.50)
+    assert (provider.name, provider.model) == ("Gemini", "gemini-3.5-flash-lite")
+    assert provider.translate.func is gemini.translate
+    assert provider.translate.keywords == {"model": "gemini-3.5-flash-lite", "api_key": "g-secret"}
+    assert stored["gemini_model"] == "5"
 
 
 def test_no_legacy_model_id_is_ever_sent():
@@ -103,7 +123,7 @@ def test_previous_version_openai_settings_keep_working(stored, saved_model, expe
     assert provider.translate.keywords == {"model": expected, "api_key": "sk-previous"}
 
 
-@pytest.mark.parametrize("saved_model", ["0", "1", "2", "3"])
+@pytest.mark.parametrize("saved_model", ["0", "1", "2", "3", "4"])
 @pytest.mark.parametrize("saved_tier", ["0", "1", None])
 def test_previous_version_gemini_settings_keep_working(stored, saved_model, saved_tier):
     stored.update({"provider": "1", "gemini_api_key": "g-previous", "gemini_model": saved_model, "target_lang": "1", "parallel_requests": "1"})
@@ -121,6 +141,7 @@ def test_previous_version_gemini_settings_keep_working(stored, saved_model, save
     assert cfg["parallel"] == 1
     assert provider.translate.func is gemini.translate
     assert provider.translate.keywords == {"model": "gemini-3.8-flash", "api_key": "g-previous"}
+    assert stored["gemini_model"] == saved_model
 
 
 def test_previous_version_mock_settings_keep_working(stored):
@@ -145,9 +166,10 @@ def test_fresh_install_uses_new_defaults(stored):
 
     stored["provider"] = "1"
     gemini_cfg = settings.get()
-    assert gemini_cfg["model"] == "gemini-3.8-flash"
-    assert gemini_cfg["price"] == MODEL_PRICES["gemini-3.8-flash"]
-    assert gemini_cfg["parallel"] == GEMINI_MAX_PARALLEL_REQUESTS
+    assert gemini_cfg["model"] == "gemini-3.5-flash-lite"
+    assert gemini_cfg["price"] == MODEL_PRICES["gemini-3.5-flash-lite"]
+    assert gemini_cfg["parallel"] == 3
+    assert "gemini_model" not in stored
 
 
 def test_corrupted_model_values_never_yield_empty_model(stored):
@@ -155,7 +177,7 @@ def test_corrupted_model_values_never_yield_empty_model(stored):
     assert settings.get()["model"] == "gpt-5.6-luna"
 
     stored.update({"provider": "1", "gemini_model": "42"})
-    assert settings.get()["model"] == "gemini-3.8-flash"
+    assert settings.get()["model"] == "gemini-3.5-flash-lite"
 
 
 @pytest.mark.parametrize("saved,expected", [("1", 1), ("4", 4), ("10", 10), ("0", 1), ("-3", 1), ("25", MAX_PARALLEL_REQUESTS), ("", 3), ("lots", 3)])
@@ -164,14 +186,12 @@ def test_parallel_requests_setting_controls_openai(stored, saved, expected):
     assert settings.get()["parallel"] == expected
 
 
-@pytest.mark.parametrize("saved,expected", [("1", 1), ("2", 2), ("7", GEMINI_MAX_PARALLEL_REQUESTS), ("0", 1), ("", min(3, GEMINI_MAX_PARALLEL_REQUESTS))])
-def test_parallel_requests_setting_controls_gemini_within_its_cap(stored, saved, expected):
+@pytest.mark.parametrize("saved,expected", [("1", 1), ("2", 2), ("7", 7), ("10", 10), ("0", 1), ("-3", 1), ("25", MAX_PARALLEL_REQUESTS), ("", 3), ("lots", 3)])
+def test_parallel_requests_setting_controls_gemini(stored, saved, expected):
     stored.update({"provider": "1", "parallel_requests": saved})
     assert settings.get()["parallel"] == expected
-
-
-def test_gemini_cap_is_explicit_and_lower_than_global_cap():
-    assert 1 < GEMINI_MAX_PARALLEL_REQUESTS < MAX_PARALLEL_REQUESTS
+    stored["provider"] = "0"
+    assert settings.get()["parallel"] == expected
 
 
 @pytest.mark.parametrize("saved_model,expected", [("0", "gpt-5.6-luna"), ("1", "gpt-5.6-terra"), ("3", "gpt-5.6-luna"), ("4", "gpt-5.6-terra")])

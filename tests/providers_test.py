@@ -109,10 +109,14 @@ def test_openai_malformed_output_yields_no_payload(urlopen, response):
     assert openai.translate("x", ITEMS, "gpt-5.6-luna", "key") is None
 
 
-def test_gemini_uses_interactions_api_with_structured_output(urlopen):
+@pytest.mark.parametrize("model,thinking_level", [
+    ("gemini-3.5-flash-lite", "minimal"),
+    ("gemini-3.8-flash", "low"),
+])
+def test_gemini_uses_interactions_api_with_structured_output(urlopen, model, thinking_level):
     urlopen.outcome["response"] = gemini_response(json.dumps(TRANSLATED))
 
-    payload = gemini.translate("Translate to Polish", ITEMS, "gemini-3.8-flash", "g-secret")
+    payload = gemini.translate("Translate to Polish", ITEMS, model, "g-secret")
 
     call = urlopen.calls[0]
     assert payload == TRANSLATED
@@ -121,7 +125,9 @@ def test_gemini_uses_interactions_api_with_structured_output(urlopen):
     assert call["headers"]["x-goog-api-key"] == "g-secret"
     assert call["timeout"] == gemini.TIMEOUT_SECONDS
     assert call["body"] == {
-        "model": "gemini-3.8-flash",
+        "model": model,
+        "store": False,
+        "generation_config": {"thinking_level": thinking_level},
         "system_instruction": "Translate to Polish",
         "input": json.dumps({"items": ITEMS}, ensure_ascii=False),
         "response_format": {"type": "text", "mime_type": "application/json", "schema": TRANSLATION_SCHEMA},

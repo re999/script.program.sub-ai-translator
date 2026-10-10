@@ -9,6 +9,10 @@ URL = "https://generativelanguage.googleapis.com/v1beta/interactions"
 TIMEOUT_SECONDS = 120
 FAILED_STATUSES = ("failed", "cancelled")
 DURATION_PATTERN = re.compile(r"^(\d+(?:\.\d+)?)s$")
+THINKING_LEVELS = {
+    "gemini-3.5-flash-lite": "minimal",
+    "gemini-3.8-flash": "low",
+}
 
 
 def translate(instructions, items, model, api_key):
@@ -25,8 +29,9 @@ def translate(instructions, items, model, api_key):
 
 
 def build_request(instructions, items, model):
-    return {
+    request = {
         "model": model,
+        "store": False,
         "system_instruction": instructions,
         "input": serialize_items(items),
         "response_format": {
@@ -35,6 +40,9 @@ def build_request(instructions, items, model):
             "schema": TRANSLATION_SCHEMA,
         },
     }
+    if model in THINKING_LEVELS:
+        request["generation_config"] = {"thinking_level": THINKING_LEVELS[model]}
+    return request
 
 
 def raise_if_failed(response):

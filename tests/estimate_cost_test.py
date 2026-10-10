@@ -104,3 +104,14 @@ def test_estimate_reflects_current_model_prices():
     assert terra["usd"] == pytest.approx(expected_terra, abs=1e-4)
     assert terra["usd"] == pytest.approx(10 * luna["usd"], rel=0.05)
     assert gemini["usd"] > 0
+
+
+def test_estimate_uses_flash_lite_standard_pricing():
+    price = MODEL_PRICES["gemini-3.5-flash-lite"]
+    assert price == Price(0.30, 2.50)
+
+    estimate = estimate_cost(str(SAMPLE_FILE), "PL", price)
+    expected = round((estimate["tokens"] * 0.30 + estimate["output_tokens"] * 2.50) / 1_000_000, 4)
+
+    assert estimate["usd"] == expected
+    assert 0 < estimate["usd"] < estimate_cost(str(SAMPLE_FILE), "PL", MODEL_PRICES["gemini-3.8-flash"])["usd"]

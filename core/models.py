@@ -13,6 +13,7 @@ MODEL_PRICES = {
     "gpt-5.6-luna": Price(0.20, 1.20),
     "gpt-5.6-terra": Price(2.00, 12.00),
     "gemini-3.8-flash": Price(0.75, 3.75),
+    "gemini-3.5-flash-lite": Price(0.30, 2.50),
 }
 LEGACY_DEFAULT_PRICE_PER_1000_TOKENS = 0.001
 
@@ -31,8 +32,9 @@ GEMINI_MODEL_CHOICES = (
     ("gemini-2.0-flash", "gemini-3.8-flash"),
     ("Auto", "gemini-3.8-flash"),
     ("gemini-3.8-flash", "gemini-3.8-flash"),
+    ("gemini-3.5-flash-lite", "gemini-3.5-flash-lite"),
 )
-GEMINI_DEFAULT_INDEX = 4
+GEMINI_DEFAULT_INDEX = 5
 
 
 def resolve_model(choices, saved_index, default_index):
