@@ -11,7 +11,8 @@ It’s especially useful for users who want to enjoy movies and shows with subti
 ## 🌟 Features
 
 - 🔤 Translate `.srt` subtitle files (other formats planned)
-- 🤖 Uses **OpenAI ChatGPT** (`gpt-3.5`, `gpt-4`) and **Gemini 1.5/2.0 Flash/Pro** models. The Gemini models can be used **free of charge** but are slower!
+- 🤖 Uses **OpenAI** (`gpt-5.6-luna`, `gpt-5.6-terra`) and **Gemini** (`gemini-3.5-flash-lite`, `gemini-3.8-flash`) to translate subtitles. Gemini may be available through Google's free API tier.
+- ✅ Every subtitle block is validated; missing or malformed items are retried individually and an incomplete translation is never saved
 - 🤪 Mock backend for **offline testing** (no token usage)
 - 📂 Context menu support on video file:
   - Translate subtitles from `.srt` files or folders containing video files or **extracted from MKV** (currently experimental)
@@ -21,8 +22,8 @@ It’s especially useful for users who want to enjoy movies and shows with subti
   - Model and API key selection
   - Token price estimation
   - Parallel request control (advanced setting)
-- 📊 Live token cost estimation before translation
-- 📊 Progress bar with cancel option, rate limiting, and retry/backoff for Gemini
+- 📊 Live cost estimation before translation, using each model's input/output token prices (Gemini shows paid-tier prices; free-tier keys are not billed)
+- 📊 Progress bar with cancel option and retries for rate limits and transient errors
 
 ---
 
@@ -77,11 +78,44 @@ Accessible via **Add-on Settings**:
 |--------|-------------|
 | **Target Language** | Choose a predefined language or enter a custom one |
 | **Provider** | Select between OpenAI, Gemini or mock backend |
-| **Model** | Choose supported model for selected provider |
+| **Model** | Choose supported model for selected provider. Legacy selections (`gpt-3.5-turbo`, `gpt-4`, `gpt-4-turbo`, Gemini 1.5/2.0, Auto) keep working and are mapped to current models |
 | **API Key** | Paste your API key (OpenAI or Gemini) here |
-| **Price per 1000 tokens** | Used for cost estimation |
-| **Parallel Requests** | Control performance / speed (e.g., 1 for Gemini) |
+| **OpenAI price override** | Optional blended USD price per 1000 tokens for the cost estimate. `0` (or the old default `0.001`) uses the built-in model prices |
+| **Parallel Requests** | Number of batches translated concurrently (1–10) for both OpenAI and Gemini. `3` is the recommended baseline for normal use; lower values may noticeably slow whole-file translation |
 | **Mock Backend** | Use fake responses for testing (no real API calls) |
+
+### Recommended models
+
+- **OpenAI `gpt-5.6-luna`** — recommended and default OpenAI model; fast and inexpensive.
+- **OpenAI `gpt-5.6-terra`** — higher-quality option, but slower and more expensive.
+- **Gemini `gemini-3.5-flash-lite`** — default Gemini model for fresh installations; fast and inexpensive.
+- **Gemini `gemini-3.8-flash`** — recommended Gemini model; fast and suitable for normal subtitle translation.
+
+Legacy selections remain supported and are mapped automatically:
+
+- `gpt-3.5-turbo` → `gpt-5.6-luna`
+- `gpt-4` → `gpt-5.6-terra`
+- `gpt-4-turbo` → `gpt-5.6-terra`
+- `gemini-1.5-flash-latest` → `gemini-3.8-flash`
+- `gemini-1.5-pro-latest` → `gemini-3.8-flash`
+- `gemini-2.0-flash` → `gemini-3.8-flash`
+- `Auto` → `gemini-3.8-flash`
+
+---
+
+## 🧪 Development
+
+Run the automated tests (no API keys or network needed):
+
+```bash
+python3 -m pytest
+```
+
+Optional live smoke test against the real APIs (uses your account and costs tokens):
+
+```bash
+OPENAI_API_KEY=... GEMINI_API_KEY=... python3 tests/live_smoke.py [openai] [gemini]
+```
 
 ---
 
@@ -112,5 +146,5 @@ This project is licensed under the **MIT License**, see the `LICENSE` file for d
 
 ---
 
-**© 2025 by re999**
+**© 2025–2026 by re999**
 

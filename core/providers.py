@@ -1,10 +1,7 @@
-from api import mock, openai, gemini
+from typing import Any, Callable, List, NamedTuple
 
-PROVIDERS = {
-    "Mock": mock,
-    "OpenAI": openai,
-    "Gemini": gemini
-}
 
-def get_provider(name: str):
-    return PROVIDERS.get(name, mock)
+class Provider(NamedTuple):
+    name: str
+    model: str
+    translate: Callable[[str, List[dict]], Any]
